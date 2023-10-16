@@ -1,6 +1,7 @@
 # Scraper for Polytechnique's Ubicast instance
 
-This tool is for scraping the content this website https://enseignement.medias.polytechnique.fr/. You must have an account and retrieve your ubicast api key here : https://enseignement.medias.polytechnique.fr/authentication/account-settings/ in order to use this tool.
+This tool retrieves the entire content of the [enseignement.medias.polytechnique.fr](https://enseignement.medias.polytechnique.fr/) website, i.e. all videos, including thumbnails and slides.
+You must have an account and retrieve your ubicast api key here : https://enseignement.medias.polytechnique.fr/authentication/account-settings/ in order to use this tool.
 
 ## Usage
 
