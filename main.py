@@ -49,12 +49,11 @@ if __name__ == "__main__":
 
     dl_cache = Dl_cache(path=path_already_dl_cache)
 
-    with tempfile.TemporaryFile(mode="w", delete=False, encoding="utf-8") as fp:
+    with tempfile.NamedTemporaryFile(mode="w", delete=True, delete_on_close=False, encoding="utf-8") as fp:
         fp.write(json.dumps(config_media))
         fp.close()
+        msc = MediaServerClient(local_conf=Path(fp.name))
 
-    msc = MediaServerClient(local_conf=Path(fp.name))
-    Path(fp.name).unlink(missing_ok=False)
     msc_cache = Msc_cache(msc=msc, path=path_msc_cache)
 
     root_oid = "c125ce66b2ecbereeh59"  # TODO how to get this id ?
