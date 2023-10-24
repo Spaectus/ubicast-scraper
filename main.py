@@ -56,6 +56,6 @@ if __name__ == "__main__":
 
     msc_cache = Msc_cache(msc=msc, path=path_msc_cache)
 
-    root_channel = Channel("root")
+    root_channel = Channel(oid="root", path=rpath, msc_cache=msc_cache, server_url=server_url)
 
     root_channel.save(dl_cache_instance=dl_cache)
