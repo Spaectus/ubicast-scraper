@@ -56,13 +56,6 @@ if __name__ == "__main__":
 
     msc_cache = Msc_cache(msc=msc, path=path_msc_cache)
 
-    root_oid = "c125ce66b2ecbereeh59"  # TODO how to get this id ?
-    root_js = msc.api(
-        f"channels/content/?parent_oid={root_oid}&content=cvlp&order_by=default&local=yes&_=1676042876656",
-        timeout=(5, 15),
-    )
-    root_channel = Channel(
-        root_oid, path=rpath, msc_cache=msc_cache, server_url=server_url
-    )
+    root_channel = Channel("root")
 
     root_channel.save(dl_cache_instance=dl_cache)

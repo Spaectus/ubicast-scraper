@@ -6,9 +6,9 @@ from pathlib import Path
 import zipfile
 from requests.utils import requote_uri
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 from ms_client.client import MediaServerRequestError
-from concurrent.futures import ThreadPoolExecutor
 
 
 def remove_forbidden_characters(string: str) -> str:
@@ -54,9 +54,12 @@ class Dl_cache:
 class Channel:
     def __init__(self, oid: str, path, msc_cache, server_url: str):
         self.oid = oid
-        url_ = f"channels/content/?parent_oid={self.oid}&content=cvlp&order_by=default&local=yes&_=1676042876656"
         self.msc_cache = msc_cache
-        self.js = msc_cache.msc_cache(url_)
+        if oid == "root":
+            self.js = msc_cache.msc_cache.api("channels/content/?local=yes", timeout=(5, 15))
+        else:
+            url_ = f"channels/content/?parent_oid={self.oid}&content=cvlp&order_by=default&local=yes&_=1676042876656"
+            self.js = msc_cache.msc_cache(url_)
         self.server_url = server_url
         self.path = path
         assert self.js["success"], f"Error on oid {oid}"
@@ -69,8 +72,7 @@ class Channel:
             for channel in self.js["channels"]:
                 ci = Channel(
                     channel["oid"],
-                    path=self.path
-                         / Path(remove_forbidden_characters(channel["title"])),
+                    path=self.path / Path(remove_forbidden_characters(channel["title"])),
                     msc_cache=self.msc_cache,
                     server_url=self.server_url,
                 )
@@ -189,19 +191,18 @@ class Channel:
 
         if "channels" in self.js:
             for channel in self.js["channels"]:
+                if channel["slug"] == "recycle-bin":
+                    continue
                 ci = Channel(
                     oid=channel["oid"],
-                    path=self.path
-                         / Path(remove_forbidden_characters(channel["title"])),
+                    path=self.path / Path(remove_forbidden_characters(channel["title"])),
                     msc_cache=self.msc_cache,
                     server_url=self.server_url,
                 )
                 ci.save(dl_cache_instance=dl_cache_instance)
 
 
-def download_attachment_archive(
-        msc, server_url: str, archive, attachment_name, annotation
-):
+def download_attachment_archive( msc, server_url: str, archive, attachment_name, annotation):
     capture_url = server_url + annotation["attachment"]["url"]
     try:
         response_capture = msc.request(
