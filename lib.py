@@ -28,10 +28,10 @@ class Msc_cache:
         with shelve.open(self.path) as db:
             self.msc_cache_python = dict(db)
 
-    def msc_cache(self, url: str, force_new=False):
+    def msc_cache(self, url: str, force_new=False, **kwargs):
         if (url in self.msc_cache_python) and not force_new:
             return self.msc_cache_python[url]
-        result = self.msc.api(url)
+        result = self.msc.api(url, **kwargs)
         self.msc_cache_python[url] = result
         with shelve.open(self.path) as db:
             db[url] = result
