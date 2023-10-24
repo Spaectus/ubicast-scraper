@@ -56,7 +56,7 @@ class Channel:
         self.oid = oid
         self.msc_cache = msc_cache
         if oid == "root":
-            self.js = msc_cache.msc_cache.api("channels/content/?local=yes", timeout=(5, 15))
+            self.js = msc_cache.msc_cache("channels/content/?local=yes", timeout=(5, 15))
         else:
             url_ = f"channels/content/?parent_oid={self.oid}&content=cvlp&order_by=default&local=yes&_=1676042876656"
             self.js = msc_cache.msc_cache(url_)
