@@ -112,11 +112,11 @@ class Channel:
                                 with urllib.request.urlopen(tumb_url, timeout=(5 * 60)) as response:
                                     archive.writestr("thumb.jpg", response.read())
                             except urllib.error.HTTPError as e:
-                                if e.code != 410:
-                                    raise e
-                                # the thumb url need to be refreshed
-                                self.refresh_js()
-                                logging.critical(f"Invalid cache has been found and deleted, but the error caused cannot be recovered. Please restart the program.")
+                                if e.code == 410:
+                                    # the thumb url need to be refreshed
+                                    self.refresh_js()
+                                    logging.critical(f"Invalid cache has been found and deleted, but the error caused cannot be recovered. Please restart the program.")
+                                raise e
                         # Download the slides
                         with ThreadPoolExecutor(max_workers=5) as executor:
                             for num_slide, annotation in enumerate(annotations_js["annotations"]):
