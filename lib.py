@@ -2,10 +2,11 @@ import json
 import logging
 import shelve
 import urllib.request
-from pathlib import Path
+import urllib.error
 import zipfile
-from requests.utils import requote_uri
 import re
+from pathlib import Path
+from requests.utils import requote_uri
 from concurrent.futures import ThreadPoolExecutor
 
 from ms_client.client import MediaServerRequestError
@@ -53,31 +54,23 @@ class Dl_cache:
 
 class Channel:
     def __init__(self, oid: str, path, msc_cache, server_url: str):
-        self.oid = oid
+        self.oid: str = oid
         self.msc_cache = msc_cache
-        if oid == "root":
-            self.js = msc_cache.msc_cache("channels/content/?local=yes", timeout=(5, 15))
+        if self.oid == "root":
+            self.js = self.msc_cache.msc_cache("channels/content/?local=yes", timeout=(5, 15))
         else:
             url_ = f"channels/content/?parent_oid={self.oid}&content=cvlp&order_by=default&local=yes&_=1676042876656"
-            self.js = msc_cache.msc_cache(url_)
-        self.server_url = server_url
+            self.js = self.msc_cache.msc_cache(url_)
+        self.server_url: str = server_url
         self.path = path
         assert self.js["success"], f"Error on oid {oid}"
 
-    def getVideosOidList(self):
-        res = []
-        if "videos" in self.js:
-            res = self.js["videos"]
-        if "channels" in self.js:
-            for channel in self.js["channels"]:
-                ci = Channel(
-                    channel["oid"],
-                    path=self.path / Path(remove_forbidden_characters(channel["title"])),
-                    msc_cache=self.msc_cache,
-                    server_url=self.server_url,
-                )
-                res.extend(ci.getVideosOidList())
-        return res
+    def refresh_js(self):
+        if self.oid == "root":
+            self.js = self.msc_cache.msc_cache("channels/content/?local=yes", force_new=True, timeout=(5, 15))
+        else:
+            url_ = f"channels/content/?parent_oid={self.oid}&content=cvlp&order_by=default&local=yes&_=1676042876656"
+            self.js = self.msc_cache.msc_cache(url_, force_new=True, timeout=(5, 15))
 
     def save(self, dl_cache_instance):
         Path(self.path).mkdir(exist_ok=True)
@@ -96,23 +89,13 @@ class Channel:
 
                 path_zip_file = self.path / remove_forbidden_characters(f"{title}.zip")
 
-                js_video_extracted_from_channel = next(
-                    filter(lambda x: x["oid"] == oid, self.js["videos"])
-                )
-                tumb_url = self.server_url + js_video_extracted_from_channel[
-                    "thumb"
-                ].replace("thumb_catalog.jpg", "thumb.jpg")
+                js_video_extracted_from_channel = next(filter(lambda x: x["oid"] == oid, self.js["videos"]))
+                tumb_url = self.server_url + js_video_extracted_from_channel["thumb"].replace("thumb_catalog.jpg", "thumb.jpg")
 
-                js = self.msc_cache.msc_cache(
-                    f"medias/modes/?oid={oid}&html5=webm_ogg_ogv_oga_mp4_m4a_mp3&yt=yt&embed=embed&_=1676051456060"
-                )
-                annotations_js = self.msc_cache.msc_cache(
-                    f"annotations/list/?oid={oid}&local=yes&_=1681659476936"
-                )
+                js = self.msc_cache.msc_cache(f"medias/modes/?oid={oid}&html5=webm_ogg_ogv_oga_mp4_m4a_mp3&yt=yt&embed=embed&_=1676051456060")
+                annotations_js = self.msc_cache.msc_cache(f"annotations/list/?oid={oid}&local=yes&_=1681659476936")
 
-                if path_zip_file.exists() and dl_cache_instance.already_dl_cache.get(
-                        str(path_zip_file), False
-                ):
+                if path_zip_file.exists() and dl_cache_instance.already_dl_cache.get(str(path_zip_file), False):
                     # Already DL nothing to do
                     pass
                 else:
@@ -122,30 +105,25 @@ class Channel:
                             archive.writestr("medias.json", json.dumps(js))
 
                         if not zipfile.Path(archive, "annotations.json").exists():
-                            archive.writestr(
-                                "annotations.json", json.dumps(annotations_js)
-                            )
+                            archive.writestr("annotations.json", json.dumps(annotations_js))
 
                         if not zipfile.Path(archive, "thumb.jpg").exists():
-                            with urllib.request.urlopen(
-                                    tumb_url, timeout=(5 * 60)
-                            ) as response:
-                                archive.writestr("thumb.jpg", response.read())
-
+                            try:
+                                with urllib.request.urlopen(tumb_url, timeout=(5 * 60)) as response:
+                                    archive.writestr("thumb.jpg", response.read())
+                            except urllib.error.HTTPError as e:
+                                if e.code != 410:
+                                    raise e
+                                # the thumb url need to be refreshed
+                                self.refresh_js()
+                                logging.critical(f"Invalid cache has been found and deleted, but the error caused cannot be recovered. Please restart the program.")
                         # Download the slides
                         with ThreadPoolExecutor(max_workers=5) as executor:
-                            for num_slide, annotation in enumerate(
-                                    annotations_js["annotations"]
-                            ):
+                            for num_slide, annotation in enumerate(annotations_js["annotations"]):
                                 if "attachment" in annotation:
                                     if "url" in annotation["attachment"]:
-                                        attachment_name = remove_forbidden_characters(
-                                            f"{num_slide + 1:06}_"
-                                            + annotation["attachment"]["filename"]
-                                        )
-                                        if not zipfile.Path(
-                                                archive, attachment_name
-                                        ).exists():
+                                        attachment_name = remove_forbidden_characters(f"{num_slide + 1:06}_" + annotation["attachment"]["filename"])
+                                        if not zipfile.Path(archive, attachment_name).exists():
                                             executor.submit(
                                                 download_attachment_archive,
                                                 msc=self.msc_cache.msc,
@@ -191,7 +169,7 @@ class Channel:
 
         if "channels" in self.js:
             for channel in self.js["channels"]:
-                if channel["slug"] == "recycle-bin":
+                if channel["slug"] in ("recycle-bin",):
                     continue
                 ci = Channel(
                     oid=channel["oid"],
@@ -202,7 +180,7 @@ class Channel:
                 ci.save(dl_cache_instance=dl_cache_instance)
 
 
-def download_attachment_archive( msc, server_url: str, archive, attachment_name, annotation):
+def download_attachment_archive(msc, server_url: str, archive, attachment_name, annotation):
     capture_url = server_url + annotation["attachment"]["url"]
     try:
         response_capture = msc.request(
@@ -214,3 +192,4 @@ def download_attachment_archive( msc, server_url: str, archive, attachment_name,
             assert 0, f"{response_capture.status_code=}"
     except MediaServerRequestError as e:
         assert "HTTP 403 error" in repr(e), repr(e)
+        logging.warning(f"{repr(e)} on {capture_url}")
