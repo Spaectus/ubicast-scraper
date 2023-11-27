@@ -1,0 +1,10 @@
+version: "3.8"
+services:
+  xscraper_dev:
+    build: 
+      dockerfile: .Dockerfile_dev
+    volumes:
+      - type: bind
+        source: .
+        target: /xscraper
+      

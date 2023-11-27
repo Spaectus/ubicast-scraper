@@ -1,0 +1,9 @@
+FROM python:3.12
+
+WORKDIR /xscraper
+COPY Pipfile Pipfile.lock ./
+
+RUN pip install pipenv && pipenv install
+RUN mkdir output
+
+ENTRYPOINT ["tail", "-f", "/dev/null"]

@@ -22,6 +22,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
+        Path(args.path).mkdir(exist_ok=True)
         if not Path(args.path).exists():
             raise ValueError(f"Path {Path(args.path)} does not exists")
     except Exception as e:
