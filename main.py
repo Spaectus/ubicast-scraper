@@ -37,7 +37,7 @@ if __name__ == "__main__":
     ), f"The UBICAST_API_KEY environment variable is not defined. An ubicast api key must be given via the UBICAST_API_KEY environment variable."
 
     config_media = {
-        "API_KEY": os.environ["UBICAST_API_KEY"],
+        "API_KEY": os.environ["UBICAST_API_KEY"].strip(),
         "CLIENT_ID": "python-api-client",
         "PROXIES": {"http": "", "https": ""},
         "SERVER_URL": server_url,
