@@ -6,6 +6,7 @@ import urllib.error
 import zipfile
 import re
 from pathlib import Path
+import time
 from requests.utils import requote_uri
 from concurrent.futures import ThreadPoolExecutor
 
@@ -23,14 +24,15 @@ def remove_forbidden_characters(string: str) -> str:
 
 
 class Msc_cache:
-    def __init__(self, msc, path):
+    def __init__(self, msc, path, force_reload):
         self.path = path
         self.msc = msc
+        self.force_reload = force_reload
         with shelve.open(self.path) as db:
             self.msc_cache_python = dict(db)
 
     def msc_cache(self, url: str, force_new=False, **kwargs):
-        if (url in self.msc_cache_python) and not force_new:
+        if (url in self.msc_cache_python) and not force_new and not self.force_reload:
             return self.msc_cache_python[url]
         result = self.msc.api(url, **kwargs)
         self.msc_cache_python[url] = result
@@ -72,10 +74,10 @@ class Channel:
             url_ = f"channels/content/?parent_oid={self.oid}&content=cvlp&order_by=default&local=yes&_=1676042876656"
             self.js = self.msc_cache.msc_cache(url_, force_new=True, timeout=(5, 15))
 
-    def save(self, dl_cache_instance):
+    def save(self, dl_cache_instance, use_cached_responses: bool = True):
         Path(self.path).mkdir(exist_ok=True)
         logging.info(f"WIP {self.path}")
-        if not (self.path / "data.json").exists() or 1:
+        if not (self.path / "data.json").exists() or not use_cached_responses:
             with open(str(self.path / "data.json"), "w") as outfile:
                 json.dump(self.js, outfile)  # indent=4
 
@@ -115,10 +117,12 @@ class Channel:
                                 if e.code == 410:
                                     # the thumb url need to be refreshed
                                     self.refresh_js()
-                                    logging.critical(f"Invalid cache has been found and deleted, but the error caused cannot be recovered. Please restart the program.")
+                                    logging.critical(
+                                        f"Invalid cache has been found and deleted, but the error caused cannot be recovered. Please restart the program."
+                                    )
                                 raise e
                         # Download the slides
-                        with ThreadPoolExecutor(max_workers=5) as executor:
+                        with ThreadPoolExecutor(max_workers=2) as executor:
                             for num_slide, annotation in enumerate(annotations_js["annotations"]):
                                 if "attachment" in annotation:
                                     if "url" in annotation["attachment"]:
@@ -145,27 +149,11 @@ class Channel:
                         definite_path = self.path / filename
                         link = requote_uri(js[name]["resource"]["url"])
                         if not definite_path.exists():
-                            video_downloaded = False
-                            try:
-                                logging.info(
-                                    f"DL in {js['names'][0]} in {repr(js['names']).replace(' ', '')} {link} {definite_path}"
-                                )
-                                urllib.request.urlretrieve(link, definite_path)
-                                video_downloaded = True
-                            finally:
-                                if not video_downloaded:
-                                    logging.info(
-                                        f"Download canceled, incomplete video file at {definite_path} will be deleted."
-                                    )
-                                    definite_path.unlink(missing_ok=True)
+                            download_video(link=link, definite_path=definite_path, js=js, max_retry=10)
                     else:
-                        logging.error(
-                            f"Impossible to DL {name} - {title} there is no js[name]['resource']['format']\n{js}"
-                        )
+                        logging.error(f"Impossible to DL {name} - {title} there is no js[name]['resource']['format']\n{js}")
                 else:
-                    logging.error(
-                        f"No name here, don't know what to download ? :\n{js}"
-                    )
+                    logging.error(f"No name here, don't know what to download ? :\n{js}")
 
         if "channels" in self.js:
             for channel in self.js["channels"]:
@@ -177,10 +165,32 @@ class Channel:
                     msc_cache=self.msc_cache,
                     server_url=self.server_url,
                 )
-                ci.save(dl_cache_instance=dl_cache_instance)
+                ci.save(dl_cache_instance=dl_cache_instance, use_cached_responses=use_cached_responses)
 
 
-def download_attachment_archive(msc, server_url: str, archive, attachment_name, annotation):
+def download_video(link: str, definite_path: Path, js, max_retry: int = 10, retry: int = 0):
+    video_downloaded = False
+    logging.info(f"DL in {js['names'][0]} in {repr(js['names']).replace(' ', '')} {link} {definite_path}")
+    try:
+        urllib.request.urlretrieve(link, definite_path)
+    except Exception as e:
+        if retry > max_retry:
+            print(f"{retry} retries on {definite_path}")
+            raise e
+        print(e)
+        time.sleep(25)
+        video_downloaded = download_video(link=link, definite_path=definite_path, js=js, retry=retry + 1, max_retry=max_retry)
+    else:
+        video_downloaded = True
+    finally:
+        if retry == 0 and not video_downloaded:
+            logging.info(f"Download canceled, incomplete video file at {definite_path} will be deleted.")
+            definite_path.unlink(missing_ok=True)
+    assert definite_path.exists()
+    return True
+
+
+def download_attachment_archive(msc, server_url: str, archive, attachment_name, annotation, max_retry: int = 10, retry: int = 0):
     capture_url = server_url + annotation["attachment"]["url"]
     try:
         response_capture = msc.request(
@@ -189,7 +199,11 @@ def download_attachment_archive(msc, server_url: str, archive, attachment_name, 
         if response_capture.status_code == 200:
             archive.writestr(attachment_name, response_capture.read())
         else:
-            assert 0, f"{response_capture.status_code=}"
+            assert retry < max_retry, f"{response_capture.status_code=}"
+            print(f"{capture_url=} {response_capture.status_code=}")
+            return download_attachment_archive(
+                msc=msc, server_url=server_url, archive=archive, attachment_name=attachment_name, annotation=annotation, max_retry=max_retry, retry=retry + 1
+            )
     except MediaServerRequestError as e:
         assert "HTTP 403 error" in repr(e), repr(e)
         logging.warning(f"{repr(e)} on {capture_url}")

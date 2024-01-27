@@ -11,10 +11,7 @@ from ms_client.client import MediaServerClient
 from lib import Channel, Msc_cache, Dl_cache
 
 if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser(
-        description="Scrape an ubicast instance. An ubicast api key must be given via the UBICAST_API_KEY environment variable."
-    )
+    parser = argparse.ArgumentParser(description="Scrape an ubicast instance. An ubicast api key must be given via the UBICAST_API_KEY environment variable.")
     parser.add_argument(
         "path",
         help="Path of the folder in which you wish to have the scraped files. The folder must exist.",
@@ -33,7 +30,7 @@ if __name__ == "__main__":
 
     server_url = "https://enseignement.medias.polytechnique.fr"
     assert (
-            "UBICAST_API_KEY" in os.environ
+        "UBICAST_API_KEY" in os.environ
     ), f"The UBICAST_API_KEY environment variable is not defined. An ubicast api key must be given via the UBICAST_API_KEY environment variable."
 
     config_media = {
@@ -41,11 +38,11 @@ if __name__ == "__main__":
         "CLIENT_ID": "python-api-client",
         "PROXIES": {"http": "", "https": ""},
         "SERVER_URL": server_url,
-        "UPLOAD_CHUNK_SIZE": 5242880,
+        "UPLOAD_CHUNK_SIZE": 5_242_880,
         "VERIFY_SSL": True,
     }
-
-    path_msc_cache = str((rpath / Path("cache_msc")).absolute())
+    force_reload = True
+    path_msc_cache = rpath / Path("cache_msc")
     path_already_dl_cache = str(rpath / "already_dl_cache")
 
     dl_cache = Dl_cache(path=path_already_dl_cache)
@@ -55,8 +52,8 @@ if __name__ == "__main__":
         fp.close()
         msc = MediaServerClient(local_conf=Path(fp.name))
 
-    msc_cache = Msc_cache(msc=msc, path=path_msc_cache)
+    msc_cache = Msc_cache(msc=msc, path=str(path_msc_cache), force_reload=force_reload)
 
     root_channel = Channel(oid="root", path=rpath, msc_cache=msc_cache, server_url=server_url)
 
-    root_channel.save(dl_cache_instance=dl_cache)
+    root_channel.save(dl_cache_instance=dl_cache, use_cached_responses=(not force_reload))
