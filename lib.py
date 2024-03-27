@@ -97,7 +97,7 @@ class Channel:
                 js = self.msc_cache.msc_cache(f"medias/modes/?oid={oid}&html5=webm_ogg_ogv_oga_mp4_m4a_mp3&yt=yt&embed=embed&_=1676051456060")
                 annotations_js = self.msc_cache.msc_cache(f"annotations/list/?oid={oid}&local=yes&_=1681659476936")
 
-                if path_zip_file.exists() and dl_cache_instance.already_dl_cache.get(str(path_zip_file), False):
+                if path_zip_file.exists() and dl_cache_instance.already_dl_cache.get(str(path_zip_file), False) and False:
                     # Already DL nothing to do
                     pass
                 else:
@@ -122,14 +122,16 @@ class Channel:
                                     )
                                 raise e
                         # Download the slides
-                        with ThreadPoolExecutor(max_workers=2) as executor:
+                        #with ThreadPoolExecutor(max_workers=1) as executor:
+                        if 1:
                             for num_slide, annotation in enumerate(annotations_js["annotations"]):
                                 if "attachment" in annotation:
                                     if "url" in annotation["attachment"]:
-                                        attachment_name = remove_forbidden_characters(f"{num_slide + 1:06}_" + annotation["attachment"]["filename"])
+                                        attachment_name = "annotations/" + remove_forbidden_characters(f"{num_slide + 1:06}_" + annotation["attachment"]["filename"])
                                         if not zipfile.Path(archive, attachment_name).exists():
-                                            executor.submit(
-                                                download_attachment_archive,
+                                            #executor.submit(
+                                            #    download_attachment_archive,
+                                            download_attachment_archive(
                                                 msc=self.msc_cache.msc,
                                                 server_url=self.server_url,
                                                 archive=archive,
@@ -187,20 +189,21 @@ def download_video(link: str, definite_path: Path, js, max_retry: int = 10, retr
             logging.info(f"Download canceled, incomplete video file at {definite_path} will be deleted.")
             definite_path.unlink(missing_ok=True)
     assert definite_path.exists()
-    return True
+    return video_downloaded
 
 
 def download_attachment_archive(msc, server_url: str, archive, attachment_name, annotation, max_retry: int = 10, retry: int = 0):
     capture_url = server_url + annotation["attachment"]["url"]
     try:
         response_capture = msc.request(
-            capture_url, parse_json=False, stream=True, timeout=(5 * 60)
+            capture_url, parse_json=False, stream=True, timeout=(3 * 60)
         )  # https://github.com/UbiCastTeam/mediaserver-client/blob/3040b18852f71bc786e04128abeb22e21e9a0634/ms_client/client.py#L95
         if response_capture.status_code == 200:
-            archive.writestr(attachment_name, response_capture.read())
+            archive.writestr(attachment_name, response_capture.content)
+            assert zipfile.Path(archive, attachment_name).exists()
         else:
             assert retry < max_retry, f"{response_capture.status_code=}"
-            print(f"{capture_url=} {response_capture.status_code=}")
+            logging.warning(f"{capture_url=} {response_capture.status_code=}")
             return download_attachment_archive(
                 msc=msc, server_url=server_url, archive=archive, attachment_name=attachment_name, annotation=annotation, max_retry=max_retry, retry=retry + 1
             )
